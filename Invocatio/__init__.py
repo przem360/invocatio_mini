@@ -1,5 +1,6 @@
 import random
 import os
+import sys, gc
 import time
 import ujson
 import machine
@@ -9,6 +10,23 @@ from lib.device import Device
 from lib import userinput
 
 from font import vga1_8x16 as midfont
+
+# --- import graphics ---
+
+try:
+    from .gfx import moon
+except ImportError:
+    from apps.invocatio.gfx import  moon
+
+try:
+    from .gfx import ritual
+except ImportError:
+    from apps.invocatio.gfx import ritual
+
+try:
+    from .gfx import ritual_2
+except ImportError:
+    from apps.invocatio.gfx import  ritual_2
 
 # --- globals for i/o ---
 
@@ -105,19 +123,19 @@ def exit_game():
 # --- output ---
 
 def clear_screen():
-    DISPLAY.fill(COLOR_BG)
+    DISPLAY.fill(COLOR_BLK)
 
 def refresh_screen():
     DISPLAY.show()
 
 def clear_line(row):
     y = row * _CHAR_HEIGHT
-    DISPLAY.rect(0, y, DISPLAY.width, _CHAR_HEIGHT, COLOR_BG, fill=True)
+    DISPLAY.rect(0, y, DISPLAY.width, _CHAR_HEIGHT, COLOR_BLK, fill=True)
 
 def clear_from_line(row):
     y = row * (_CHAR_HEIGHT)
     log("clear_from_line({})".format(row))
-    DISPLAY.rect(0, row, _DISPLAY_WIDTH, (_DISPLAY_HEIGHT-row), COLOR_BG, fill=True)
+    DISPLAY.rect(0, row, _DISPLAY_WIDTH, (_DISPLAY_HEIGHT-row), COLOR_BLK, fill=True)
     #DISPLAY.show()
 
 
@@ -176,6 +194,23 @@ def mh_input(msg, clr=COLOR_FG):
     refresh_screen()
     u_input = get_line()
     return u_input
+
+# --- GRAPHICS ---
+
+def show_illustration(picture):
+    illustrations = {
+        "moon": (moon, 32, 16, 0),
+        "ritual": (ritual, 98, 0, 65528),
+        "ritual_2": (ritual_2, 98, 0, 65528)
+    }
+    if picture not in illustrations:
+        return 1
+    bitmap_data, width, y, key_val = illustrations[picture]
+    x = (_DISPLAY_WIDTH - width) // 2
+    clear_screen()
+    DISPLAY.bitmap(bitmap_data, x, y, key=key_val)
+    mh_input("Press [OK] to continue...")
+
 
 # ---------- GAME ----------
 
@@ -275,7 +310,6 @@ def random_number(a, b):
     return random.randint(a, b)
 
 def present_info():
-    log("present_info()")
     DISPLAY.rect(8*CH_W, 0, len(cfg.town_name)*CH_W, CH_H, COLOR_CTH_GREEN, fill=True)
     draw_text(0,0, f"Town of {cfg.town_name} – Turn {state.turn}/12") # 🌘
     draw_h_line(0, CH_H+2, _DISPLAY_WIDTH, COLOR_CTH_GREEN)
@@ -294,33 +328,34 @@ def apply_effects(state_object, effects):
         setattr(state_object, attribute_name, final_value)
 
 def check_risk():
+    clear_from_line(SH_Y)
     if state.fear >= 80 and state.faith <= 30:
-        draw_text(0, SH_Y,"The villagers are on the verge of rebellion!") # ⚠️
+        draw_text_ln(0, SH_Y+CH_H+INTERLINE,"The villagers are on the verge\nof rebellion!") # ⚠️
     if state.fear >= 100:
         clear_line(3)
-        draw_text(0, SH_Y+CH_H+INTERLINE, "REBELLION! The people rise up against the cult!") # 🔥
-        draw_text(0, SH_Y+(CH_H*2)+INTERLINE, "ENDING: You were killed by the mob.") # 💀
+        draw_text(0, SH_Y+(CH_H*3)+INTERLINE, "REBELLION! The people rise up!") # 🔥
+        draw_text_ln(0, SH_Y+(CH_H*4)+INTERLINE, "ENDING:\nYou were killed by the mob.") # 💀
         get_line()
         delete_if_exists(cfg.state_file)
         exit_game()
 
 def end_game():
-    draw_text(0,SH_Y, f"END OF GAME – Year {state.year}") # 🔚
+    clear_from_line(SH_Y)
+    draw_text(0,SH_Y+CH_H+INTERLINE, f"END OF GAME – Year {state.year}") # 🔚
     if state.favor > 95 and state.fear > 90:
-        draw_text(0, SH_Y+CH_H, "They came... but not as you hoped. Your mind could not handle it.") # 🤯
+        draw_text_ln(0, SH_Y+(CH_H*2)+INTERLINE, "They came... but not as you hoped.\nYour mind could not handle it.") # 🤯
     elif state.favor > 80 and state.faith > 70 and state.fear < 50:
-        draw_text(0, SH_Y+CH_H, "The Descent of the Depths has occurred. The cult triumphs.") # 🌑
+        draw_text_ln(0, SH_Y+(CH_H*2)+INTERLINE, "The Descent of the Depths has occurred.\nThe cult triumphs.") # 🌑
     elif state.favor > 50 and state.fear < 60:
-        draw_text(0, SH_Y+CH_H, "Silence Beyond. You survived. But you're unsure it was worth it.") # 🕯️
+        draw_text_ln(0, SH_Y+(CH_H*2)+INTERLINE, "Silence Beyond. You survived.\nBut you're unsure it was worth it.") # 🕯️
     else:
-        draw_text(0, SH_Y+CH_H, "Town’s Doom. You were not worthy.") # 🔥
+        draw_text_ln(0, SH_Y+CH_H, "Town’s Doom.\nYou were not worthy.") # 🔥
     delete_if_exists(cfg.state_file)
     exit_game()
 
 # --- TURN FUNCTIONS ---
 
 def feed_population():
-    log("feed_population()")
     consumed = state.population * 2
     state.stored_food -= consumed
     draw_text(0, SH_Y, f"Consumed {consumed} food.") # 🍽️ 
@@ -331,9 +366,9 @@ def feed_population():
         state.fear += 10
         state.population = max(0, state.population - 5)
         state.stored_food = 0
+    t = mh_input("Press [OK] to continue...")
 
 def perform_sacrifices():
-    log("perform_sacrifices()")
     try:
         s = int(mh_input("How many people sacrifice?")) # 👁️
         s = max(0, min(s, 10, state.population))
@@ -348,7 +383,7 @@ def perform_sacrifices():
     draw_text(0,SH_Y+CH_H+INTERLINE, f"{s} sacrificed. Favor +{s*3}") # 🩸
     draw_text(0,SH_Y+(CH_H*2)+INTERLINE, f"Fear +{s*2}, Cult Power +{s}")
     refresh_screen()
-    t = mh_input("Press [OK] to continue")
+    t = mh_input("Press [OK] to continue...")
 
 def choose_action():
     draw_text(0, SH_Y,"Choose an additional action:") # ⚙️
@@ -366,9 +401,11 @@ def choose_action():
         elif action == 2:
             state.ritual_materials += 1
         elif action == 3 and state.ritual_materials >= 1:
+            show_illustration("ritual")
             state.ritual_materials -= 1
             state.insight += 1
         elif action == 4 and state.ritual_materials >= 2:
+            show_illustration("ritual_2")
             state.ritual_materials -= 2
             state.favor += 5
             state.cult_power += 2
@@ -395,12 +432,18 @@ def trigger_event():
 # --- MAIN LOOP ---
 
 def main():
+    clean_log()
     log("Game started.")
     load_state(cfg.state_file)
     while state.turn <= 12:
+        # --- new round, report on feeding population ---
         clear_screen()
         present_info()
         feed_population()
+        # --- monthly sacrifices ---
+        show_illustration("moon")
+        clear_screen()
+        present_info()
         perform_sacrifices()
         # -------------
         clear_screen()
@@ -414,6 +457,9 @@ def main():
         state.cult_power = max(0, state.cult_power - 1)
         save_state(cfg.state_file)
         state.turn += 1
+    # -----------------
+    clear_screen()
+    present_info()
     end_game()
 
 
