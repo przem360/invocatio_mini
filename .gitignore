@@ -1,4 +1,4 @@
 sd_mount.py
-gfx/
+/gfx/
 __pycache__
 krita_bitmap_importer.py
