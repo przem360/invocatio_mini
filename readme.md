@@ -1,5 +1,5 @@
 <p align="center"><img src="icon.png" /></p>
-# Invocatio
+<h1 align="center">Invocatio</h1>
 
 **Invocatio** is a simple text-based management game written in **MicroPython** for the **CARDPUTER** device, running under the [MicroHydra](https://github.com/echo-lalia/MicroHydra) environment.
 
